@@ -252,3 +252,114 @@ fsmooth <- function(dt, M = 6, genLfun.fd = 4, centrata = F, ...)
               basis = genbasis, mat = mat_fun, r = r))
 }
 
+
+# safer smoothing wrapper that avoids using every observed r as a knot and
+# provides sensible defaults for nbasis and lambda plus fallbacks on error
+fsmooth_safe <- function(
+  dt,
+  M = 6,                  # spline order (norder)
+  genLfun.fd = 4,         # Lfdobj for fdPar
+  centrata = FALSE,       # center by r before smoothing
+  nbasis = NULL,          # allow user to set number of basis functions
+  breaks = NULL,          # alternative: provide a coarser breaks vector
+  lambda = NULL,          # smoothing penalty; if NULL a default is chosen
+  rangeval = NULL,        # override range(r) if desired
+  verbose = FALSE,
+  ...
+) {
+  # 1. Robustly extract r
+  if ("r_value" %in% names(dt)) {
+    r <- dt$r_value
+  } else {
+    if (verbose) message("Warning: 'r_value' column not found; using first column as r")
+    r <- dt[[1]]
+  }
+
+  # 2. Extract functional matrix (all columns after the first)
+  mat_fun <- as.matrix(dt[, -1, with = FALSE])
+  if (is.null(colnames(mat_fun))) {
+    colnames(mat_fun) <- paste0("S", seq_len(ncol(mat_fun)))
+  }
+
+  # 3. Optional centering
+  if (isTRUE(centrata)) {
+    mat_fun <- sweep(mat_fun, MARGIN = 1, STATS = r, FUN = "-")
+  }
+
+  # 4. Determine range
+  if (is.null(rangeval)) rangeval <- range(r, na.rm = TRUE)
+
+  # 5. Choose nbasis sensibly if not provided
+  n_r <- length(r)
+  if (!is.null(breaks)) {
+    # If the user supplied breaks, follow fda convention
+    nbasis_calc <- length(breaks) + M - 2
+    if (verbose) message("Using user-supplied breaks; nbasis computed as: ", nbasis_calc)
+    genbasis <- create.bspline.basis(rangeval = rangeval, nbasis = nbasis_calc, norder = M, breaks = breaks)
+  } else {
+    if (!is.null(nbasis)) {
+      nbasis_calc <- nbasis
+    } else {
+      # default heuristic: up to 30 bases but not larger than roughly n_r/4
+      nbasis_calc <- min(30, max(M + 1, floor(n_r / 4)))
+    }
+    if (nbasis_calc >= n_r) {
+      if (verbose) message("nbasis (", nbasis_calc, ") >= number of observations (", n_r, "); reducing nbasis to avoid overparameterization")
+      nbasis_calc <- max(M + 1, n_r - 1)
+    }
+    genbasis <- create.bspline.basis(rangeval = rangeval, nbasis = nbasis_calc, norder = M)
+  }
+
+  # 6. Choose lambda if not provided (avoid near-interpolation)
+  if (is.null(lambda)) {
+    # A conservative default that provides some smoothing; users may increase
+    # but avoid values like 1e-11 which effectively disable penalization
+    lambda_val <- 1e-6
+  } else {
+    lambda_val <- lambda
+  }
+
+  genfdPar <- fdPar(genbasis, genLfun.fd, lambda = lambda_val)
+
+  # 7. Try smoothing with fallback strategies on error
+  genfdSmooth <- tryCatch(
+    smooth.basis(argvals = r, y = mat_fun, fdParobj = genfdPar, ...),
+    error = function(e) {
+      if (verbose) message("smooth.basis failed: ", conditionMessage(e), "; retrying with larger lambda and Lfdobj=2")
+      # fallback: increase penalty and use Lfdobj=2
+      tryCatch(
+        {
+          genfdPar2 <- fdPar(genbasis, Lfdobj = 2, lambda = max(lambda_val, 1e-4))
+          smooth.basis(argvals = r, y = mat_fun, fdParobj = genfdPar2, ...)
+        },
+        error = function(e2) {
+          stop("Both primary and fallback smoothing attempts failed: ", conditionMessage(e2))
+        }
+      )
+    }
+  )
+
+  Genfun.fd <- genfdSmooth$fd
+
+  # 8. Set names defensively
+  fdn_dist <- paste("Distanza (da 0 a", max(r, na.rm = TRUE), "micron)")
+  fdnames <- list(fdn_dist,
+                  "Sample" = colnames(mat_fun),
+                  "Funzione")
+  Genfun.fd$fdnames <- fdnames
+
+  # 9. Basic sanity checks
+  if (!is.null(Genfun.fd$coefs)) {
+    n_coefs <- ncol(Genfun.fd$coefs)
+    if (ncol(mat_fun) != n_coefs) {
+      if (verbose) message("Warning: number of functions in mat_fun (", ncol(mat_fun), ") != number of fd coefficient columns (", n_coefs, ")")
+    } else {
+      if (verbose) message("Finished smoothing: nbasis=", genbasis$nbasis, ", lambda=", lambda_val)
+    }
+  } else {
+    if (verbose) message("Finished smoothing but fd$coefs is NULL")
+  }
+
+  return(list(fd = Genfun.fd, fdPar = genfdPar, basis = genbasis, mat = mat_fun, r = r))
+}
+

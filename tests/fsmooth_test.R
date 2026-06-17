@@ -1,0 +1,10 @@
+#!/usr/bin/env Rscript
+suppressPackageStartupMessages(library(data.table))
+cat('Reading sample rows from data/combined_Lcross_KDE.csv\n')
+dt <- fread('data/combined_Lcross_KDE.csv', nrows=200)
+cat('Loaded dt with', nrow(dt), 'rows and', ncol(dt), 'cols\n')
+source('R/ppp_fun.R')
+out <- fsmooth_safe(dt, verbose=TRUE)
+cat(sprintf('nbasis=%d\n', out$basis$nbasis))
+cat(sprintf('lambda=%g\n', out$fdPar$lambda))
+if (!is.null(out$fd$coefs)) cat(sprintf('fd_coefs_cols=%d\n', ncol(out$fd$coefs))) else cat('fd_coefs=NULL\n')
