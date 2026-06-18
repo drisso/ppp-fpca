@@ -140,7 +140,7 @@ plot_smoothed_Lfun <- function(smoothed_obj, clusters_vec, mark_i = "Mark 1", ma
   # 5. Prepare the cluster metadata from the named vector (memb_hc)
   cluster_df <- data.frame(
     Slide = names(clusters_vec),
-    cluster = as.factor(clusters_vec)
+    cluster = clusters_vec
   )
   
   # 6. Join the functional data with the cluster assignments
@@ -163,6 +163,87 @@ plot_smoothed_Lfun <- function(smoothed_obj, clusters_vec, mark_i = "Mark 1", ma
     ) +
     theme(legend.position = "right")
   
+  return(p)
+}
+
+# Plot average smoothed L-function per group
+# group_vec can be a named vector (names are Slide IDs) or a vector aligned to the columns of the fd/matrix
+plot_group_avg_Lfun <- function(smoothed_obj, group_vec, mark_i = "Mark 1", mark_j = "Mark 2", center_plot = TRUE, se = TRUE) {
+  r_vec <- smoothed_obj$r
+  smooth_mat <- eval.fd(r_vec, smoothed_obj$fd)
+  df_smooth <- as.data.frame(smooth_mat)
+  df_smooth$r <- r_vec
+
+  df_long <- pivot_longer(
+    df_smooth,
+    cols = -r,
+    names_to = "Slide",
+    values_to = "L_value"
+  )
+
+  # Resolve group mapping
+  if (!is.null(names(group_vec))) {
+    group_df <- data.frame(Slide = names(group_vec), group = as.factor(group_vec), stringsAsFactors = FALSE)
+  } else if (length(group_vec) == ncol(smooth_mat)) {
+    group_df <- data.frame(Slide = colnames(smooth_mat), group = as.factor(group_vec), stringsAsFactors = FALSE)
+  } else {
+    stop("group_vec must be either a named vector or have length equal to number of samples")
+  }
+
+  df_joined <- df_long |> left_join(group_df, by = "Slide")
+
+  if (center_plot) {
+    df_joined <- df_joined |> mutate(L_plot_value = L_value - r)
+    y_label <- "L(r) - r"
+    subtitle <- "Centered L-function (L(r) - r). Positive = Attraction, Negative = Repulsion"
+  } else {
+    df_joined <- df_joined |> mutate(L_plot_value = L_value)
+    y_label <- "L(r)"
+    subtitle <- "L-function L(r)"
+  }
+
+  # Aggregate: mean and (optionally) standard error
+  if (se) {
+    df_summary <- df_joined |>
+      group_by(group, r) |> 
+      summarize(
+        mean = mean(L_plot_value, na.rm = TRUE),
+        n = sum(!is.na(L_plot_value)),
+        sd = sd(L_plot_value, na.rm = TRUE),
+        .groups = "drop"
+      ) |> 
+      mutate(se = ifelse(n > 1, sd / sqrt(n), NA_real_),
+             ymin = mean - 1.96 * se,
+             ymax = mean + 1.96 * se)
+  } else {
+    df_summary <- df_joined |>
+      group_by(group, r) |> 
+      summarize(
+        mean = mean(L_plot_value, na.rm = TRUE),
+        .groups = "drop"
+      )
+  }
+
+  p <- ggplot(df_summary, aes(x = r, y = mean, color = group, fill = group)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
+
+  if (se) {
+    p <- p + geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.2, color = NA)
+  }
+
+  p <- p +
+    geom_line(size = 1.2) +
+    theme_minimal() +
+    labs(
+      title = paste0("Average Smoothed L-cross Function: ", mark_i, " vs ", mark_j),
+      subtitle = subtitle,
+      x = "Radius (r)",
+      y = y_label,
+      color = "Group",
+      fill = "Group"
+    ) +
+    theme(legend.position = "right")
+
   return(p)
 }
 
