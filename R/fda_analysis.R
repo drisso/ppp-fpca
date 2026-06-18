@@ -345,7 +345,7 @@ dt_anno_ext[,paste0("PC", 1:10)] <- fpca_ext$scores
 ## Check results
 dt_anno_ext |>
   ggplot(aes(PC1, PC2, color = disease_code)) +
-  geom_point(size = 3) +
+  geom_point(size = 1) +
   theme_bw() +
   scale_color_manual(values = pal)
 
@@ -424,16 +424,96 @@ idx <- names(which.min(fpca_ext$scores[,2]))
 plot_sample(idx)
 
 # average curve per disease
+plot_group_avg_Lfun(
+  smoothed_obj = smoothed_Lfun_ext,
+  group_vec = dt_anno_ext$disease_code, 
+  mark_i = "neoplastic", 
+  mark_j = "stromal", 
+  center_plot = TRUE, 
+  se = FALSE
+) + scale_color_manual(values = pal)
 
 # centroid in fPCA
+fpc1 <- tapply(fpca_ext$scores[,1], dt_anno_ext$disease_code, mean)
+fpc2 <- tapply(fpca_ext$scores[,2], dt_anno_ext$disease_code, mean)
+
+centroids <- data.frame(PC1=fpc1, PC2=fpc2, disease_code = names(fpc1)) 
+centroids |>
+  ggplot(aes(PC1, PC2, color = disease_code)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggrepel::geom_label_repel(aes(label=disease_code))
+
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = disease_code)) +
+  geom_point(size = 1) +
+  theme_bw() +
+  ggrepel::geom_label_repel(data=centroids, aes(label=disease_code), max.overlaps = Inf) +
+  theme(legend.position = "none") +
+  scale_color_manual(values = pal)
+
+dt_anno_ext <- mutate(dt_anno_ext, class = NA)
+dt_anno_ext[dt_anno_ext$disease_code %in% c("OV", "UCEC", "UCS"), "class"] <- "Gynecological"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("KIRC", "KIRP", "KICH"), "class"] <- "Renal"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("GBM", "LGG", "UVM"), "class"] <- "CNS and eye"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("HNSC", "LUSC", "CESC", "ESCA", "BLCA"), "class"] <- "Epithelial"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("COAD", "READ", "STAD", "PAAD"), "class"] <- "GI"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("DLBC"), "class"] <- "Lymphoma"
+dt_anno_ext[dt_anno_ext$disease_code %in% c("SKCM", "SARC"), "class"] <- "Mesenchymal"
+
+
+dt_anno_ext |>
+  dplyr::select(PC1, PC2, class) |>
+  na.omit() |>
+  ggplot(aes(PC1, PC2, color = class)) +
+  geom_point(size = 1) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+dt_anno_ext |>
+  dplyr::select(PC1, PC2, class) |>
+  na.omit() |>
+  ggplot(aes(class, PC1)) +
+  geom_boxplot() +
+  theme_bw()
+
+dt_anno_ext |>
+  dplyr::select(PC1, PC2, class) |>
+  na.omit() |>
+  ggplot(aes(class, PC2)) +
+  geom_boxplot() +
+  theme_bw()
 
 # curves color-coded by PC1 and PC2
+anno_vec <- dt_anno_ext$PC1
+names(anno_vec) <- dt_anno_ext$id
 
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_ext, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored + scale_color_viridis_c()
+
+anno_vec <- dt_anno_ext$PC2
+names(anno_vec) <- dt_anno_ext$id
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_ext, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored + scale_color_viridis_c()
 
 # clustering
 set.seed(123)
-fpca_km <- kmeans(fpca$scores[,1:2], centers = 6, nstart = 10)
-fpca_hc <- hclust(dist(fpca$scores[,1:2]), method = "ward.D2")
+fpca_km <- kmeans(fpca_ext$scores, centers = 6, nstart = 10)
+fpca_hc <- hclust(dist(fpca_ext$scores), method = "ward.D2")
 memb_hc <- cutree(fpca_hc, k = 6)
 
 table(fpca_km$cluster)
@@ -442,21 +522,171 @@ table(fpca_km$cluster, memb_hc)
 
 # plot of the L funs
 plot_colored <- plot_smoothed_Lfun(
-  smoothed_obj = smoothed_Lfun, 
-  clusters_vec = memb_hc, 
+  smoothed_obj = smoothed_Lfun_ext, 
+  clusters_vec = as.factor(memb_hc), 
   mark_i = "neoplastic",  # Define marks manually here for the title
   mark_j = "stromal",
   center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
 )
 plot_colored
 
-# PC scores
-par(mfrow=c(1,2))
-plot(fpca$scores[,1], fpca$scores[,2], col = fpca_km$cluster, pch = 3, main = "kmeans")
-abline(v = 0, lty = "dashed", col = "grey")
-abline(h = 0, lty = "dashed", col = "grey")
-plot(fpca$scores[,1], fpca$scores[,2], col = memb_hc, pch = 3, main = "Ward.d2")
-abline(v = 0, lty = "dashed", col = "grey")
-abline(h = 0, lty = "dashed", col = "grey")
-par(mfrow=c(1,1))
+dt_anno_ext <- mutate(dt_anno_ext, kmeans = as.factor(fpca_km$cluster))
+dt_anno_ext <- mutate(dt_anno_ext, hclust = as.factor(memb_hc))
 
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = kmeans)) +
+  geom_point(size = 1) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = hclust)) +
+  geom_point(size = 1) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+## Focus on Lung, Stomach and esophageal, 
+dt_anno_brca <- filter(dt_anno_ext, disease_code %in% c("LUAD", "LUSC"))
+dt_anno_brca <- filter(dt_anno_ext, disease_code %in% c("STAD", "ESCA"))
+dt_anno_brca <- filter(dt_anno_ext, disease_code %in% c("BLCA"))
+
+dt_brca <- cbind(dt[,1], dt[,which(colnames(dt) %in% dt_anno_brca$id)])
+dim(dt_brca)
+
+## smooth functions
+dt_brca_tb <- as_tibble(dt_brca)
+smoothed_Lfun_brca <- fsmooth_safe(dt_brca_tb, M = 6, genLfun.fd = 4, centrata = FALSE)
+
+anno_vec <- dt_anno_brca$disease_code
+names(anno_vec) <- dt_anno_brca$id
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_brca, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored + scale_color_manual(values = pal)
+
+## Perform fPCA
+fpca_brca <- pca.fd(smoothed_Lfun_brca$fd, nharm = 10, smoothed_Lfun_brca$fdPar)
+rownames(fpca_brca$scores) <- colnames(dt_brca_tb)[-1] # sample names without r_values
+
+round(fpca_brca$varprop, 5)
+
+dt_anno_brca[,paste0("PC", 1:10)] <- fpca_brca$scores
+
+## Check results
+dt_anno_brca |>
+  ggplot(aes(PC1, PC2, color = log(total_nuclei))) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_viridis_c()
+
+dt_anno_brca |>
+  ggplot(aes(PC1, PC2, color = purity)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_viridis_c()
+
+anno_vec <- dt_anno_brca$PC1
+names(anno_vec) <- dt_anno_brca$id
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_brca, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored + scale_color_viridis_c()
+
+## Check association with survival
+set.seed(123)
+fpca_km <- kmeans(fpca_brca$scores, centers = 4, nstart = 10)
+table(fpca_km$cluster)
+table(fpca_km$cluster, dt_anno_brca$disease_code)
+
+dt_anno_brca <- mutate(dt_anno_brca, kmeans = as.factor(fpca_km$cluster))
+
+dt_anno_brca |>
+  ggplot(aes(PC1, PC2, color = kmeans)) +
+  geom_point(size = 1) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+
+# --- Survival analysis by cluster (Kaplan-Meier + log-rank test) ---------------------------------
+# Requires: dt_anno_brca with columns 'time' (follow-up), 'event' (0=censored,1=event), and 'kmeans' (cluster factor)
+suppressPackageStartupMessages(library(survival))
+suppressPackageStartupMessages(library(survminer))
+
+# Basic input checks
+if (!all(c("time", "event", "kmeans") %in% colnames(dt_anno_brca))) {
+  stop("dt_anno_brca must contain 'time', 'event', and 'kmeans' columns for survival analysis.")
+}
+
+# Build survival object
+surv_obj <- with(dt_anno_brca, Surv(time = time, event = event))
+
+# Fit KM curves by cluster
+fit_km <- survfit(surv_obj ~ kmeans, data = dt_anno_brca)
+
+# Plot Kaplan-Meier curves with risk table and p-value
+# Use existing palette if available; otherwise let survminer choose
+palette_for_clusters <- if (exists("pal") && length(pal) >= length(unique(dt_anno_brca$kmeans))) pal else NULL
+
+km_plot <- ggsurvplot(
+  fit_km,
+  data = dt_anno_brca,
+  risk.table = FALSE,
+  pval = TRUE,
+  conf.int = FALSE,
+  palette = palette_for_clusters,
+  ggtheme = theme_minimal(),
+  legend.title = "Cluster",
+  risk.table.height = 0.2
+)
+
+# Print the plot (in interactive sessions this renders; in scripts it will be written if wrapped)
+print(km_plot)
+
+# Log-rank (survdiff) test
+lr <- survdiff(surv_obj ~ kmeans, data = dt_anno_brca)
+# Compute p-value from chi-square distribution
+pval_lr <- 1 - pchisq(lr$chisq, df = length(lr$n) - 1)
+cat(sprintf("Log-rank test: chi-square = %.3f, df = %d, p = %g\n", lr$chisq, length(lr$n) - 1, pval_lr))
+
+# Optionally, show pairwise comparisons (Benjamini-Hochberg adjusted) using pairwise_survdiff if survminer available
+if (requireNamespace("survminer", quietly = TRUE)) {
+  if (length(unique(dt_anno_brca$kmeans)) > 1) {
+    pw <- survminer::pairwise_survdiff(Surv(time, event) ~ kmeans, data = dt_anno_brca)
+    cat("Pairwise log-rank p-values (raw):\n")
+    print(pw$p.value)
+  }
+}
+
+# -----------------------------------------------------------------------------------------------
+
+# average curve per cluster
+plot_group_avg_Lfun(
+  smoothed_obj = smoothed_Lfun_brca,
+  group_vec = dt_anno_brca$kmeans, 
+  mark_i = "neoplastic", 
+  mark_j = "stromal", 
+  center_plot = TRUE, 
+  se = FALSE
+) + scale_color_manual(values = pal)
+
+idx <- names(fpca_brca$scores[dt_anno_brca$kmeans==1,1])[1]
+plot_sample(idx)
+
+idx <- names(fpca_brca$scores[dt_anno_brca$kmeans==2,1])[1]
+plot_sample(idx)
+
+idx <- names(fpca_brca$scores[dt_anno_brca$kmeans==3,1])[1]
+plot_sample(idx)
+
+idx <- names(fpca_brca$scores[dt_anno_brca$kmeans==4,1])[1]
+plot_sample(idx)
