@@ -165,3 +165,25 @@ plot_smoothed_Lfun <- function(smoothed_obj, clusters_vec, mark_i = "Mark 1", ma
   
   return(p)
 }
+
+plot_sample <- function(idx) {
+
+hov_file <- paste0(
+    "https://store.cancerdatasci.org/hovernet/h5ad/",
+    idx,
+    ".h5ad.gz")
+
+thumb_path <- paste0(
+    "https://store.cancerdatasci.org/hovernet/thumb/",
+    idx,
+    ".png")
+
+hn_spe <- HoverNet(hov_file, outClass = "SpatialExperiment") |>
+    import()
+
+plotHoverNetH5ADOverlay(hn_spe, thumb_path, 
+  title=substr(idx, 1, 23),
+  point_size = 0.02,
+  legend_point_size = 3)
+
+}

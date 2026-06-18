@@ -187,9 +187,23 @@ dt <- as.data.frame(dt)
 dt_pass <- cbind(dt[,1], dt[,which(colnames(dt) %in% dt_anno_pass$id)])
 dim(dt_pass)
 
-## Perform fPCA
+## Smooth functions
 dt_pass_tb <- as_tibble(dt_pass)
 smoothed_Lfun_pass <- fsmooth_safe(dt_pass_tb, M = 6, genLfun.fd = 4, centrata = FALSE)
+
+anno_vec <- dt_anno_pass$disease_code
+names(anno_vec) <- dt_anno_pass$id
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_pass, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored +   scale_color_manual(values = pal)
+
+## Perform fPCA
 fpca_pass <- pca.fd(smoothed_Lfun_pass$fd, nharm = 10, smoothed_Lfun_pass$fdPar)
 rownames(fpca_pass$scores) <- colnames(dt_pass_tb)[-1] # sample names without r_values
 
@@ -270,10 +284,150 @@ summary(fit3)
 fit4 <- lm(PC2 ~ disease_code + log(total_nuclei) + purity + inflammatory + hospital_code, data=dt_anno_pass)
 summary(fit4)
 
+## Explore some examples
+idx <- names(which.max(fpca_pass$scores[,1]))
+plot_sample(idx)
+
+idx <- names(which.min(fpca_pass$scores[,1]))
+plot_sample(idx)
+
+idx <- names(which.max(fpca_pass$scores[,2]))
+plot_sample(idx)
+
+idx <- names(which.min(fpca_pass$scores[,2]))
+plot_sample(idx)
+
+
+## Let's do another round of removing outliers
+## Check where these samples are
+dt_anno_pass |>
+  mutate(remove = ifelse({PC1>100 | abs(PC2)>10}, TRUE, FALSE)) -> dt_anno_pass
+table(dt_anno_pass$remove)
+
+dt_anno_pass |>
+  ggplot(aes(PC1, PC2, color = remove)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  geom_vline(xintercept = 100) +
+  geom_hline(yintercept = -10) +
+  geom_hline(yintercept = 10)
+
+## remove samples
+dt_anno_ext <- filter(dt_anno_pass, !remove)
+dim(dt_anno_ext)
+dt_ext <- cbind(dt[,1], dt[,which(colnames(dt) %in% dt_anno_ext$id)])
+dim(dt_ext)
+
+## smooth functions
+dt_ext_tb <- as_tibble(dt_ext)
+smoothed_Lfun_ext <- fsmooth_safe(dt_ext_tb, M = 6, genLfun.fd = 4, centrata = FALSE)
+
+anno_vec <- dt_anno_ext$disease_code
+names(anno_vec) <- dt_anno_ext$id
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun_ext, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored +   scale_color_manual(values = pal)
+
+## Perform fPCA
+fpca_ext <- pca.fd(smoothed_Lfun_ext$fd, nharm = 10, smoothed_Lfun_ext$fdPar)
+rownames(fpca_ext$scores) <- colnames(dt_ext_tb)[-1] # sample names without r_values
+
+round(fpca_ext$varprop, 5)
+
+dt_anno_ext[,paste0("PC", 1:10)] <- fpca_ext$scores
+
+## Check results
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = disease_code)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = log(total_nuclei))) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_viridis_c()
+
+dt_anno_ext |>
+  ggplot(aes(log(total_nuclei), PC1)) +
+  geom_point(size = 2, aes(color = disease_code)) +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+dt_anno_ext |>
+  ggplot(aes(log(total_nuclei), PC1)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  scale_color_manual(values = pal) +
+  facet_wrap(~disease_code)
+
+dt_anno_ext |>
+  ggplot(aes(PC1, PC2, color = purity)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_viridis_c()
+
+dt_anno_ext |>
+  ggplot(aes(purity, PC2)) +
+  geom_point(size = 2, aes(color = disease_code)) +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  scale_color_manual(values = pal)
+
+dt_anno_ext |>
+  ggplot(aes(purity, PC2)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  scale_color_manual(values = pal) +
+  facet_wrap(~disease_code)
+
+dt_anno_ext |>
+  ggplot(aes(disease_code, PC1)) +
+  geom_boxplot() +
+  theme_bw()
+
+dt_anno_ext |>
+  ggplot(aes(disease_code, PC2)) +
+  geom_boxplot() +
+  theme_bw()
+
+fit1 <- lm(PC1 ~ log(total_nuclei), data=dt_anno_ext)
+summary(fit1)
+fit2 <- lm(PC1 ~ disease_code, data=dt_anno_ext)
+summary(fit2)
+fit3 <- lm(PC1 ~ disease_code + log(total_nuclei) + purity + inflammatory + hospital_code, data=dt_anno_ext)
+summary(fit3)
+fit4 <- lm(PC2 ~ disease_code + log(total_nuclei) + purity + inflammatory + hospital_code, data=dt_anno_ext)
+summary(fit4)
+
+## Explore some examples
+idx <- names(which.max(fpca_ext$scores[,1]))
+plot_sample(idx)
+
+idx <- names(which.min(fpca_ext$scores[,1]))
+plot_sample(idx)
+
+idx <- names(which.max(fpca_ext$scores[,2]))
+plot_sample(idx)
+
+idx <- names(which.min(fpca_ext$scores[,2]))
+plot_sample(idx)
+
 # average curve per disease
 
 # centroid in fPCA
 
+# curves color-coded by PC1 and PC2
 
 
 # clustering
