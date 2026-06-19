@@ -268,3 +268,82 @@ plotHoverNetH5ADOverlay(hn_spe, thumb_path,
   legend_point_size = 3)
 
 }
+
+plot_thumb <- function(idx, flip_image = TRUE, max_dim = 800) {
+
+  thumb_path <- paste0(
+    "https://store.cancerdatasci.org/hovernet/thumb/",
+    idx,
+    ".png")
+
+  img <- HoverNet(thumb_path) |>
+      import() |>
+      magick::image_read()
+
+  # Downscale large images to a reasonable display size to avoid
+  # expensive full-resolution decoding in cowplot::draw_image.
+  info <- magick::image_info(img)
+  if (max(info$width, info$height) > max_dim) {
+    # Resize to fit inside max_dim x max_dim while preserving aspect ratio
+    img <- magick::image_resize(img, paste0(max_dim, "x", max_dim, ">"))
+  }
+
+  if (flip_image)
+    img <- magick::image_flip(img)
+
+  # Draw using grid raster which is faster for already-sized rasters
+  grid::grid.newpage()
+  grid::grid.raster(as.raster(img), interpolate = FALSE)
+}
+
+library(SpatialExperiment)
+plot_hovernet <- function(idx, point_size = 0.01, legend_point_size = 3, all_types = FALSE) {
+
+  hov_file <- paste0(
+    "https://store.cancerdatasci.org/hovernet/h5ad/",
+    idx,
+    ".h5ad.gz")
+
+  hn_spe <- HoverNet(hov_file, outClass = "SpatialExperiment") |>
+    import()
+
+  coords <- spatialCoords(hn_spe)
+
+  gg <- data.frame(
+    x = coords[, "x_centroid"],
+    y = coords[, "y_centroid"],
+    type = factor(colData(hn_spe)$type, levels=c("neoplastic", "stromal", "inflammatory", "necrotic", "benign epithelial", "no label"))
+  )
+
+  gg <- mutate(gg, tumor_stroma = factor(ifelse(type %in% c("neoplastic", "stromal"), as.character(type), "other")))
+
+  pal <- RColorBrewer::brewer.pal(5, "Set1")
+  if(all_types) {
+    pal <- c(pal, "grey")
+  } else {
+    pal <- c(pal[1:2], "grey")
+  }
+
+  if(all_types) {
+    p <- ggplot(gg, aes(x, y, color = type)) + 
+      geom_point(size = point_size, alpha = 0.75)
+  } else {
+    p <- ggplot(gg, aes(x, y, color = tumor_stroma)) +
+      geom_point(data = filter(gg, tumor_stroma != "other"), size = point_size, alpha = 0.75) +
+      geom_point(data = filter(gg, tumor_stroma == "other"), size = point_size, alpha = 0.05)
+  }
+  
+  p +
+    scale_color_manual(values = pal) +
+    coord_fixed(expand = FALSE) +
+    theme_void(base_size = 16) +
+    labs(
+      title = "",
+      subtitle = "",
+      x = "X coordinate",
+      y = "Y coordinate"
+    ) +
+    guides(col = guide_legend(
+                override.aes = list(size = legend_point_size)
+            ))
+}

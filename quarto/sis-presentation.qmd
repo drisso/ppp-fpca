@@ -1,0 +1,120 @@
+---
+title: "Plots for SIS presentation"
+format: 
+    html:
+        embed-resources: true
+author: Davide Risso
+---
+
+# Setup
+
+```{r}
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(parallel))
+suppressPackageStartupMessages(library(fda))
+source("../R/plot_funs.R")
+source("../R/ppp_fun.R")
+
+# ==========================================
+# 2. Define Paths
+# ==========================================
+data_dir <- "../data/"
+input_file <- paste0(data_dir, "combined_Lcross_KDE.csv")
+
+# ==========================================
+# 3. Read Data and Apply Function
+# ==========================================
+dt <- fread(input_file)
+
+# Read useful annotation
+library(readr)
+anno <- read_csv( paste0(data_dir, "TCGA_filtered_metadata_VR.csv"))
+dim(anno)
+
+anno <- anno |>
+  mutate(
+    time = ifelse(!is.na(days_to_death), days_to_death, days_to_last_follow_up),
+    event = ifelse(!is.na(days_to_death), 1, 0)
+  )
+
+patient_ids_from_dt <- substr(colnames(dt)[-1], 1, 12)
+dt_ids <- data.frame(id=colnames(dt)[-1], submitter_id=patient_ids_from_dt)
+
+dt_ids |>
+  left_join(anno, by = "submitter_id") -> dt_anno
+
+head(dt_anno)
+```
+
+# Pan-Cancer analysis
+
+Smoothing functions and plotting them.
+
+```{r}
+smoothed_Lfun <- fsmooth_safe(dt, M = 6, genLfun.fd = 4, centrata = FALSE)
+
+anno_vec <- dt_anno$disease_code
+names(anno_vec) <- dt_anno$id
+
+table(anno_vec)
+
+library(Polychrome)
+pal <- unname(palette36.colors(n = 31))
+
+plot_colored <- plot_smoothed_Lfun(
+  smoothed_obj = smoothed_Lfun, 
+  clusters_vec = anno_vec, 
+  mark_i = "neoplastic",  # Define marks manually here for the title
+  mark_j = "stromal",
+  center_plot = TRUE      # Set to TRUE to subtract 'r' since centrata=FALSE in fsmooth
+)
+plot_colored +   scale_color_manual(values = pal)
+```
+
+Functional PCA
+
+```{r}
+fpca <- pca.fd(smoothed_Lfun$fd, nharm = 10, smoothed_Lfun$fdPar)
+rownames(fpca$scores) <- colnames(dt)[-1] # sample names without r_values
+
+round(fpca$varprop, 5)
+
+df_pca <- data.frame(fpca$scores, anno=anno_vec)
+head(df_pca)
+
+df_pca |>
+  ggplot(aes(X1, X2, color = anno)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  scale_color_manual(values = pal) +
+  geom_vline(xintercept = 500) +
+  geom_hline(yintercept = -50)
+  
+plot(mean.fd(smoothed_Lfun$fd))  
+plot(fpca$harmonics[1], main="PC1")
+plot(fpca$harmonics[2], main="PC2")
+
+hist(fpca$scores[,1])
+```
+
+## Outliers
+
+Identify and inspect outliers.
+
+```{r}
+library(imageFeatureTCGA)
+library(HistoImagePlot)
+
+## Identify and inspect outliers
+samples <- union(names(which(fpca$scores[,1]>500)), names(which(fpca$scores[,2]< (-50))))
+samples
+
+for(i in seq_along(samples)) {
+    print(plot_sample(samples[i]))
+}
+
+library(patchwork)
+plot_thumb(samples[1])
+plot_hovernet(samples[1])
+
+```
