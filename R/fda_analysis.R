@@ -690,3 +690,8 @@ plot_sample(idx)
 
 idx <- names(fpca_brca$scores[dt_anno_brca$kmeans==4,1])[1]
 plot_sample(idx)
+
+dt_anno_brca |>
+  ggplot(aes(kmeans, purity)) +
+  geom_boxplot() +
+  theme_bw()

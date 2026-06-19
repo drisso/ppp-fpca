@@ -264,7 +264,7 @@ hn_spe <- HoverNet(hov_file, outClass = "SpatialExperiment") |>
 
 plotHoverNetH5ADOverlay(hn_spe, thumb_path, 
   title=substr(idx, 1, 23),
-  point_size = 0.02,
+  point_size = 0.01,
   legend_point_size = 3)
 
 }
