@@ -104,17 +104,16 @@ Identify and inspect outliers.
 ```{r}
 library(imageFeatureTCGA)
 library(HistoImagePlot)
+library(patchwork)
 
 ## Identify and inspect outliers
 samples <- union(names(which(fpca$scores[,1]>500)), names(which(fpca$scores[,2]< (-50))))
 samples
 
 for(i in seq_along(samples)) {
-    print(plot_sample(samples[i]))
+    p1 <- plot_thumb(samples[i])
+    p2 <- plot_hovernet(samples[i], all_types = TRUE)
+
+    print(p1 + p2)
 }
-
-library(patchwork)
-plot_thumb(samples[1])
-plot_hovernet(samples[1])
-
 ```

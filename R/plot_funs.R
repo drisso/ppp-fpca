@@ -269,7 +269,7 @@ plotHoverNetH5ADOverlay(hn_spe, thumb_path,
 
 }
 
-plot_thumb <- function(idx, flip_image = TRUE, max_dim = 800) {
+plot_thumb <- function(idx, flip_image = TRUE, max_dim = 800, as_gg = TRUE) {
 
   thumb_path <- paste0(
     "https://store.cancerdatasci.org/hovernet/thumb/",
@@ -281,23 +281,43 @@ plot_thumb <- function(idx, flip_image = TRUE, max_dim = 800) {
       magick::image_read()
 
   # Downscale large images to a reasonable display size to avoid
-  # expensive full-resolution decoding in cowplot::draw_image.
+  # expensive full-resolution decoding in plotting functions.
   info <- magick::image_info(img)
   if (max(info$width, info$height) > max_dim) {
     # Resize to fit inside max_dim x max_dim while preserving aspect ratio
     img <- magick::image_resize(img, paste0(max_dim, "x", max_dim, ">"))
+    info <- magick::image_info(img)
   }
 
   if (flip_image)
     img <- magick::image_flip(img)
 
-  # Draw using grid raster which is faster for already-sized rasters
-  grid::grid.newpage()
-  grid::grid.raster(as.raster(img), interpolate = FALSE)
+  # Convert to a raster for plotting
+  raster_img <- as.raster(img)
+
+  if (!as_gg) {
+    # legacy behavior: draw directly on a new grid page
+    grid::grid.newpage()
+    grid::grid.raster(raster_img, interpolate = FALSE)
+    return(invisible(NULL))
+  }
+
+  # Build a ggplot object with the image as a background layer.
+  # Use annotation_raster and coord_fixed to preserve aspect ratio.
+  w <- info$width
+  h <- info$height
+  aspect_ratio <- h / w
+
+  p <- ggplot2::ggplot() +
+    ggplot2::annotation_raster(raster_img, xmin = 0, xmax = 1, ymin = 0, ymax = 1) +
+    ggplot2::theme_void() +
+    ggplot2::coord_fixed(ratio = aspect_ratio, expand = FALSE)
+
+  return(p)
 }
 
 library(SpatialExperiment)
-plot_hovernet <- function(idx, point_size = 0.01, legend_point_size = 3, all_types = FALSE) {
+plot_hovernet <- function(idx, point_size = 0.01, legend_point_size = 3, all_types = FALSE, facet = FALSE) {
 
   hov_file <- paste0(
     "https://store.cancerdatasci.org/hovernet/h5ad/",
@@ -333,7 +353,7 @@ plot_hovernet <- function(idx, point_size = 0.01, legend_point_size = 3, all_typ
       geom_point(data = filter(gg, tumor_stroma == "other"), size = point_size, alpha = 0.05)
   }
   
-  p +
+  p2 <- p +
     scale_color_manual(values = pal) +
     coord_fixed(expand = FALSE) +
     theme_void(base_size = 16) +
@@ -346,4 +366,10 @@ plot_hovernet <- function(idx, point_size = 0.01, legend_point_size = 3, all_typ
     guides(col = guide_legend(
                 override.aes = list(size = legend_point_size)
             ))
+  
+  if(facet) {
+    p2 + facet_wrap(~type, ncol = 3)
+  } else {
+    p2
+  }
 }
